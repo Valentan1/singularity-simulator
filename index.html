@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raychaudhuri Solver | Multidimensional Analysis</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --card: #1e293b;
+            --text: #f8fafc;
+            --accent: #38bdf8;
+            --danger: #ef4444;
+            --success: #22c55e;
+            --warning: #fbbf24;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Inter', system-ui, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #sidebar {
+            width: 340px;
+            background-color: var(--card);
+            padding: 2rem;
+            border-right: 1px solid #334155;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            box-shadow: 4px 0 15px rgba(0,0,0,0.3);
+            z-index: 10;
+            overflow-y: auto;
+        }
+
+        h2 { margin: 0 0 0.5rem 0; font-size: 1.25rem; color: var(--accent); }
+        .sub-header { font-size: 0.75rem; opacity: 0.6; margin-bottom: 1rem; line-height: 1.4; }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        label { font-size: 0.875rem; font-weight: 500; display: flex; justify-content: space-between; }
+
+        input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+            accent-color: var(--accent);
+        }
+
+        .val-display {
+            font-family: monospace;
+            background: #0f172a;
+            padding: 2px 8px;
+            border-radius: 4px;
+            color: var(--accent);
+        }
+
+        #main {
+            flex-grow: 1;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            overflow-y: hidden;
+        }
+
+        #status-banner {
+            padding: 1rem;
+            border-radius: 8px;
+            font-weight: 800;
+            text-align: center;
+            letter-spacing: 1.5px;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            font-size: 1.1rem;
+            border: 1px solid rgba(255,255,255,0.1);
+            flex-shrink: 0;
+        }
+
+        .charts-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 1rem;
+            flex-grow: 1;
+            min-height: 0;
+        }
+
+        .chart-box {
+            background: var(--card);
+            border-radius: 8px;
+            padding: 10px;
+            border: 1px solid #334155;
+            min-height: 0;
+        }
+
+        .math-box {
+            margin-top: auto;
+            padding: 1rem;
+            background: #0f172a;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            border-left: 3px solid var(--accent);
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+
+    <aside id="sidebar">
+        <h2>Physics Engine</h2>
+        <div class="sub-header">Modified Raychaudhuri Equation for Viscous Congruences.</div>
+        
+        <div class="control-group">
+            <label>Focusing (A) <span id="val-a" class="val-display">1.0</span></label>
+            <input type="range" id="input-a" min="0.1" max="10.0" step="0.1" value="1.0">
+        </div>
+
+        <div class="control-group">
+            <label>Viscosity (B) <span id="val-b" class="val-display">3.0</span></label>
+            <input type="range" id="input-b" min="0.0" max="10.0" step="0.1" value="3.0">
+        </div>
+
+        <div class="control-group">
+            <label>Initial &theta;<sub>0</sub> <span id="val-theta" class="val-display">-10</span></label>
+            <input type="range" id="input-theta" min="-50" max="0" step="0.5" value="-10">
+        </div>
+
+        <div class="math-box">
+            d&theta;/d&lambda; = -0.5&theta;<sup>2</sup> - B&theta; - A<br><br>
+            <b>Discriminant (D):</b> <span id="val-d"></span><br>
+            <b>Stable Root:</b> <span id="val-root"></span>
+        </div>
+    </aside>
+
+    <main id="main">
+        <div id="status-banner">System Active</div>
+        
+        <div class="charts-container">
+            <div id="chart-raw" class="chart-box"></div>
+            <div id="chart-phase" class="chart-box"></div>
+            <div id="chart-norm" class="chart-box"></div>
+            <div id="chart-3d" class="chart-box"></div>
+        </div>
+    </main>
+
+    <script>
+        const UI = {
+            a: document.getElementById('input-a'),
+            b: document.getElementById('input-b'),
+            theta: document.getElementById('input-theta'),
+            valA: document.getElementById('val-a'),
+            valB: document.getElementById('val-b'),
+            valTheta: document.getElementById('val-theta'),
+            valD: document.getElementById('val-d'),
+            valRoot: document.getElementById('val-root'),
+            banner: document.getElementById('status-banner'),
+            chartRaw: 'chart-raw',
+            chartNorm: 'chart-norm',
+            chartPhase: 'chart-phase',
+            chart3d: 'chart-3d'
+        };
+
+        const config = { responsive: true, displayModeBar: false };
+        const layoutBase = {
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)',
+            font: { color: '#f8fafc', size: 10 },
+            margin: { t: 30, r: 20, l: 40, b: 30 },
+            xaxis: { gridcolor: '#334155', zerolinecolor: '#475569' },
+            yaxis: { gridcolor: '#334155', zerolinecolor: '#475569' }
+        };
+
+        // Precompute 3D Surface Data (Singularity Horizon)
+        const aVals = [], bVals = [], zVals = [];
+        for(let a = 0.1; a <= 10.1; a+=0.5) {
+            aVals.push(a);
+            let zRow = [];
+            for(let b = 0; b <= 10.1; b+=0.5) {
+                if(a === 0.1) bVals.push(b);
+                const D = (b * b) - (2 * a);
+                if (D >= 0) zRow.push(-b + Math.sqrt(D));
+                else zRow.push(null);
+            }
+            zVals.push(zRow);
+        }
+
+        const traceSurface = {
+            z: zVals, x: bVals, y: aVals,
+            type: 'surface',
+            colorscale: 'Viridis',
+            showscale: false,
+            opacity: 0.85,
+            name: 'Stable Root \u03B8+',
+            hovertemplate: 'B: %{x:.1f}<br>A: %{y:.1f}<br>\u03B8+: %{z:.3f}<extra></extra>'
+        };
+
+        function simulate(steps, dt, A, B, theta0) {
+            let t = 0, theta = theta0, lambdas = [], thetas = [], xs = [], dthetas = [];
+            const D = (B * B) - (2 * A);
+            const tp = D >= 0 ? -B + Math.sqrt(D) : null;
+            const tm = D >= 0 ? -B - Math.sqrt(D) : null;
+
+            for (let i = 0; i < steps; i++) {
+                const dt_val = -(0.5 * theta * theta) - (B * theta) - A;
+                lambdas.push(t);
+                thetas.push(theta);
+                dthetas.push(dt_val);
+                
+                if (D >= 0) xs.push((theta - tm) / (tp - tm));
+                else xs.push(null);
+
+                theta += dt_val * dt;
+                t += dt;
+
+                // FIX: Removed premature break condition to allow full asymptotic plotting.
+                // We only break if it physically drops below an arbitrary event horizon.
+                if (theta < -1000) break;
+            }
+            return { lambdas, thetas, xs, dthetas, D, tp, tm };
+        }
+
+        function update() {
+            const A = parseFloat(UI.a.value), B = parseFloat(UI.b.value), t0 = parseFloat(UI.theta.value);
+            UI.valA.innerText = A.toFixed(1); 
+            UI.valB.innerText = B.toFixed(1); 
+            UI.valTheta.innerText = t0.toFixed(1);
+
+            const res = simulate(1500, 0.01, A, B, t0);
+            UI.valD.innerText = res.D.toFixed(2);
+            UI.valRoot.innerText = res.tp !== null ? res.tp.toFixed(3) : "None (Complex)";
+
+            if (res.D < 0) {
+                UI.banner.style.background = 'var(--danger)';
+                UI.banner.style.color = 'white';
+                UI.banner.innerText = '⚠ SINGULARITY INEVITABLE (D < 0)';
+            } else {
+                UI.banner.style.background = 'var(--success)';
+                UI.banner.style.color = '#0f172a';
+                UI.banner.innerText = `✓ EQUILIBRIUM REACHED AT \u03B8 \u2248 ${res.tp.toFixed(3)}`;
+            }
+
+            // 1. Evolution Chart
+            Plotly.react(UI.chartRaw, [{
+                x: res.lambdas, y: res.thetas, line: {color: 'var(--accent)', width: 3}
+            }], { ...layoutBase, title: 'Time Evolution: \u03B8(\u03BB)', xaxis:{title:'Affine Parameter \u03BB'}, yaxis:{title:'Expansion \u03B8'} }, config);
+
+            // 2. Phase Portrait
+            const thetaRange = [], dThetaRange = [];
+            for(let th = -20; th <= 2; th += 0.5) {
+                thetaRange.push(th);
+                dThetaRange.push(-(0.5 * th * th) - (B * th) - A);
+            }
+            Plotly.react(UI.chartPhase, [{
+                x: thetaRange, y: dThetaRange, name: 'Flow', line: {color: '#94a3b8'}, type: 'scatter'
+            }, {
+                x: [res.thetas[0]], y: [res.dthetas[0]], mode: 'markers', name: 'Start', marker: {size: 10, color: '#fbbf24'}, type: 'scatter'
+            }], { ...layoutBase, title: 'Phase Space: d\u03B8/d\u03BB vs \u03B8', xaxis: {title: '\u03B8'}, yaxis: {title: 'd\u03B8/d\u03BB'}, showlegend: false }, config);
+
+            // 3. Saturation Chart (FIX: Using Plotly annotations instead of destructive innerHTML)
+            if (res.D >= 0) {
+                Plotly.react(UI.chartNorm, [{
+                    x: res.lambdas, y: res.xs, line: {color: 'var(--warning)', width: 3}
+                }], { 
+                    ...layoutBase, 
+                    title: 'Saturation Variable: x(\u03BB)', 
+                    yaxis: {range: [-0.1, 1.1], gridcolor: '#334155', zerolinecolor: '#475569'},
+                    xaxis: {gridcolor: '#334155', zerolinecolor: '#475569'},
+                    annotations: [] 
+                }, config);
+            } else {
+                Plotly.react(UI.chartNorm, [], { 
+                    ...layoutBase, 
+                    title: 'Saturation Variable: x(\u03BB)',
+                    xaxis: { showgrid: false, zeroline: false, showticklabels: false },
+                    yaxis: { showgrid: false, zeroline: false, showticklabels: false },
+                    annotations: [{
+                        text: 'Viscosity Insufficient to Prevent Collapse<br>(No Logistic Mapping Available)',
+                        xref: 'paper', yref: 'paper',
+                        x: 0.5, y: 0.5,
+                        showarrow: false,
+                        font: { color: 'rgba(255, 255, 255, 0.3)', size: 12 }
+                    }]
+                }, config);
+            }
+
+            // 4. 3D Singularity Horizon
+            const currentPoint = {
+                x: [B], y: [A], z: [res.tp !== null ? res.tp : 0],
+                mode: 'markers',
+                type: 'scatter3d',
+                marker: { color: res.D >= 0 ? '#fbbf24' : '#ef4444', size: 6, symbol: 'circle', line: {color: '#ffffff', width: 2} },
+                name: 'Current State'
+            };
+
+            const layout3D = {
+                ...layoutBase,
+                title: 'Singularity Horizon \u03B8+(A, B)',
+                margin: { t: 30, r: 0, l: 0, b: 0 },
+                scene: {
+                    xaxis: { title: 'Viscosity (B)', gridcolor: '#334155' },
+                    yaxis: { title: 'Focusing (A)', gridcolor: '#334155' },
+                    zaxis: { title: '\u03B8+', gridcolor: '#334155' },
+                    bgcolor: 'rgba(0,0,0,0)',
+                    camera: { eye: {x: 1.5, y: 1.5, z: 0.5} }
+                },
+                showlegend: false
+            };
+
+            Plotly.react(UI.chart3d, [traceSurface, currentPoint], layout3D, config);
+        }
+
+        [UI.a, UI.b, UI.theta].forEach(el => el.addEventListener('input', update));
+        
+        // Initial setup
+        update(); 
+    </script>
+</body>
+</html>
